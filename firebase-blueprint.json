@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information including role for access control.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "fullName": { "type": "string" },
+        "registrationNo": { "type": "string" },
+        "class": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "student"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "A single quiz question related to CNC topics.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string", "description": "The question text" },
+        "imageUrl": { "type": "string", "description": "Optional URL for figure/diagram" },
+        "options": { "type": "array", "items": { "type": "string" }, "description": "List of possible answers" },
+        "correctAnswerIndex": { "type": "integer", "description": "Index of the correct answer in the options array" },
+        "category": { "type": "string", "description": "CNC topic category (e.g., G-Codes, Tooling, Safety)" },
+        "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+        "explanation": { "type": "string", "description": "Explanation for the correct answer" }
+      },
+      "required": ["text", "options", "correctAnswerIndex", "category"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "A collection of questions forming a quiz.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "questionIds": { "type": "array", "items": { "type": "string" } },
+        "timeLimitMinutes": { "type": "integer" },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "questionIds", "startDate", "endDate"]
+    },
+    "Attempt": {
+      "title": "Attempt",
+      "description": "A user's attempt at a specific quiz.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "score": { "type": "number" },
+        "answers": { "type": "array", "items": { "type": "integer" }, "description": "Indices of answers chosen by the user" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "quizId", "score", "answers"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents"
+    },
+    "/questions/{questionId}": {
+      "schema": "Question",
+      "description": "Question bank"
+    },
+    "/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Quiz configurations"
+    },
+    "/attempts/{attemptId}": {
+      "schema": "Attempt",
+      "description": "User quiz attempts"
+    }
+  }
+}

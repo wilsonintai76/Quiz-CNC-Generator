@@ -1,0 +1,165 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId} (matches Auth UID)
+// Fields:
+//   - uid: string (required, immutable) - Firebase Auth UID
+//   - email: string (required, immutable) - User email
+//   - displayName: string (optional) - User display name
+//   - fullName: string (optional) - Student full name
+//   - registrationNo: string (optional) - Student registration number
+//   - class: string (optional) - Student class
+//   - role: string (required) - 'admin' or 'student'
+//   - createdAt: timestamp (required, immutable) - Account creation time
+//
+// Collection: questions
+// Document ID: {questionId}
+// Fields:
+//   - text: string (required) - Question text
+//   - imageUrl: string (optional) - Figure/diagram URL
+//   - options: list (required, size <= 10) - List of strings
+//   - correctAnswerIndex: int (required) - Index of correct answer
+//   - category: string (required) - CNC topic
+//   - difficulty: string (required) - 'easy', 'medium', 'hard'
+//   - explanation: string (optional) - Why the answer is correct
+//
+// Collection: quizzes
+// Document ID: {quizId}
+// Fields:
+//   - title: string (required) - Quiz title
+//   - description: string (optional) - Quiz description
+//   - questionIds: list (required, size <= 50) - List of question document IDs
+//   - timeLimitMinutes: int (required) - Time limit in minutes
+//   - startDate: timestamp (required) - When quiz becomes available
+//   - endDate: timestamp (required) - When quiz expires
+//   - createdAt: timestamp (required, immutable)
+//
+// Collection: attempts
+// Document ID: {attemptId}
+// Fields:
+//   - userId: string (required, immutable) - UID of the student
+//   - quizId: string (required, immutable) - ID of the quiz
+//   - score: number (required) - Final score
+//   - answers: list (required) - Indices of chosen answers
+//   - startedAt: timestamp (required, immutable)
+//   - completedAt: timestamp (required, immutable)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email in ["wilsonintai76@gmail.com", "wilson@poliku.edu.my"]) && request.auth.token.email_verified == true);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['uid', 'email', 'role', 'createdAt']) &&
+             hasOnlyAllowedFields(['uid', 'email', 'displayName', 'fullName', 'registrationNo', 'class', 'role', 'createdAt', 'photoURL', 'photoUrl', 'isActive']) &&
+             isValidEmail(data.email) &&
+             data.role in ['admin', 'student'] &&
+             (data.isActive is bool || !('isActive' in data)) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidQuestion(data) {
+      return hasRequiredFields(['text', 'options', 'correctAnswerIndex', 'category', 'difficulty']) &&
+             hasOnlyAllowedFields(['text', 'imageUrl', 'options', 'correctAnswerIndex', 'category', 'difficulty', 'explanation']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 2000 &&
+             data.options is list && data.options.size() >= 2 && data.options.size() <= 10 &&
+             data.correctAnswerIndex is int && data.correctAnswerIndex >= 0 && data.correctAnswerIndex < data.options.size() &&
+             data.category is string && data.category.size() > 0 &&
+             data.difficulty in ['easy', 'medium', 'hard'];
+    }
+
+    function isValidQuiz(data) {
+      return hasRequiredFields(['title', 'questionIds', 'timeLimitMinutes', 'startDate', 'endDate', 'createdAt']) &&
+             hasOnlyAllowedFields(['title', 'description', 'questionIds', 'timeLimitMinutes', 'startDate', 'endDate', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.questionIds is list && data.questionIds.size() > 0 && data.questionIds.size() <= 50 &&
+             data.timeLimitMinutes is int && data.timeLimitMinutes > 0 &&
+             data.startDate is timestamp &&
+             data.endDate is timestamp &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidAttempt(data) {
+      return hasRequiredFields(['userId', 'quizId', 'score', 'answers', 'startedAt', 'completedAt']) &&
+             hasOnlyAllowedFields(['userId', 'quizId', 'score', 'answers', 'startedAt', 'completedAt']) &&
+             data.userId == request.auth.uid &&
+             data.score is number && data.score >= 0 &&
+             data.answers is list &&
+             data.startedAt is timestamp &&
+             data.completedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.uid == userId && (request.resource.data.role == 'student' || isAdmin());
+      allow update: if isAuthenticated() && (
+        (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.uid == userId && areImmutableFieldsUnchanged(['uid', 'email', 'createdAt']) && (request.resource.data.role == resource.data.role || isAdmin())) ||
+        (isAdmin() && areImmutableFieldsUnchanged(['uid', 'email', 'createdAt']))
+      );
+    }
+
+    match /questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin() && isValidQuestion(request.resource.data);
+    }
+
+    match /quizzes/{quizId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin() && isValidQuiz(request.resource.data);
+    }
+
+    match /attempts/{attemptId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && isValidAttempt(request.resource.data);
+      allow update, delete: if isAdmin(); // Only admin can modify/delete attempts for analysis
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
